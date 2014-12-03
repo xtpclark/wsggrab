@@ -10,21 +10,19 @@ echo "Working dir is $DIR"
 WORKDATE=`/bin/date "+%m%d%y_%s"`
 PLAINDATE=`date`
 
-#!/bin/bash
 PROG=`basename $0`
 
 usage() {
 echo "$PROG usage:"
 echo
 echo "$PROG -H"
-echo "$PROG [ -c CRMACCNTNAME ] [ -D DATE]"
+echo "$PROG [ -C Customer Settings ]"
 echo
 echo "-H print this help and exit"
-echo "-c CRMACCOUNT Name"
-echo "-D date range"
+echo "-C Customer Settings File"
 }
 
-ARGS=`getopt H:c:D: $*`
+ARGS=`getopt H:C: $*`
 
 if [ $? != 0 ] ; then
 usage
@@ -35,8 +33,6 @@ set -- $ARGS
 while [ "$1" != -- ] ; do
 case "$1" in
 -H) usage ; exit 0 ;;
--c) export CRMACCT="$2" ; shift ;;
--D) export DATE="$2" ; shift ;;
 -C) export CUSTSET="$2" ; shift ;;
 *) usage ; exit 1 ;;
 esac
@@ -48,20 +44,21 @@ done
 shift
 
 if [ $# -lt 1 ] ; then
-echo $PROG: One db to backup is required
+echo $PROG: One Customer is needed
 usage
 exit 1
 
 elif [ $# -gt 1 ] ; then
-echo $PROG: multiple dbs named - ignoring more than the first 1
+echo $PROG: ignoring more than the first 1
 fi
+
 
 
 enviro()
 {
-
 BAKDIR=${WORKING}/xtupledb
 SETS=${WORKING}/ini/settings.ini
+CUSTSETS=${WORKING}/ini/${CUSTSET}
 }
 
 settings()
@@ -74,6 +71,18 @@ echo "No Settings"
 exit 0;
 fi
 }
+
+custsettings()
+{
+if [ -e $CUSTSETS ]
+then
+source $CUSTSETS
+else
+echo "No Settings"
+exit 0;
+fi
+}
+
 
 setup()
 {
@@ -106,7 +115,6 @@ fi
 sendslack()
 {
 # Read in from $SETS
-
 filename=$BACKUPFILE
 MESSAGE='WSGLoad found a database named '
 
@@ -117,6 +125,7 @@ curl -X POST --data-urlencode "${payload}" ${SLACK_HOOK}
 
 enviro
 settings
+custsettings
 s3check
 s3download
 sendslack
