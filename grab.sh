@@ -241,14 +241,49 @@ sendslack
 
 }
 
-rundrops()
+runpresql()
 {
-SLACK_MESSAGE="Running PreSQL file ${PRESQL} on ${DBNAME}"
+PRESQL="${WORKING}/custsql/${PRESQL}"
+if [ -e $PRESQL ];
+then
+SLACK_MESSAGE="Running presql file ${PRESQL} on ${DBNAME}"
 sendslack
-CUSTSQL="${WORKING}/custsql/${PRESQL}"
-DROP=`${PGCMD} ${DBNAME} < ${CUSTSQL}`
+CMD=`${PGCMD} ${DBNAME} < ${PRESQL}`
 SLACK_MESSAGE="Ran ${CUSTSQL}"
 sendslack
+else
+echo "no pre file."
+fi
+}
+
+rundropsql()
+{
+DROPSQL="${WORKING}/custsql/${DROPSQL}"
+if [ -e $DROPSQL ];
+then
+SLACK_MESSAGE="Running dropsql file ${DROPSQL} on ${DBNAME}"
+sendslack
+CMD=`${PGCMD} ${DBNAME} < ${PRESQL}`
+SLACK_MESSAGE="Ran ${CUSTSQL}"
+sendslack
+else
+echo "no drop file."
+fi
+}
+
+runpostsql()
+{
+POSTSQL="${WORKING}/custsql/${POSTSQL}"
+if [ -e $POSTSQL ];
+then
+SLACK_MESSAGE="Running postsql file ${POSTSQL} on ${DBNAME}"
+sendslack
+CMD=`${PGCMD} ${DBNAME} < ${POSTSQL}`
+SLACK_MESSAGE="Ran ${POSTSQL}"
+sendslack
+else
+echo "no postsql file."
+fi
 }
 
 checkxtver()
@@ -286,11 +321,17 @@ checkxtver
 fi
 }
 
+sendreport()
+{
+echo placeholder
+}
 
 enviro
 settings
 custsettings
+
 s3check
+
 s3download
 stopdb
 stopmobile
@@ -302,8 +343,14 @@ createdb
 restoredb
 
 checkdb
-rundrops
+
+runpresql
+rundropsql
+
 checkmobile
+
+runpostsql
+
 checkxtver
 startmobile
 #sendslack
