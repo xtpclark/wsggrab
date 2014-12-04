@@ -1,6 +1,11 @@
 #!/bin/bash
 #set -vx
 # set -eu
+
+exec 3>&1 4>&2
+trap 'exec 2>&4 1>&3' 0 1 2 3
+exec 1>log.out 2>&1
+
 EDITOR=vi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 WORKING=$DIR
@@ -66,6 +71,7 @@ enviro()
 {
 BAKDIR=${WORKING}/xtupledb
 SQLDIR=${WORKING}/sql
+LOGDIR=${WORKING}/log
 SETS=${WORKING}/ini/settings.ini
 CUSTSETS=${WORKING}/ini/${CUSTSET}
 EC2IPV4=`ec2metadata --public-ipv4`
@@ -88,9 +94,12 @@ fi
 
 custsettings()
 {
+
 if [ -e $CUSTSETS ]
 then
 source $CUSTSETS
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+echo "Using ${CUSTSETS}"
 else
 echo "No Settings"
 exit 0;
@@ -109,14 +118,16 @@ echo "Created ${DIR}/ ${DIRS}"
 
 s3check ()
 {
-DATE="_${DATE}"
-echo "DATE is $DATE"
-S3BACKUPS=`s3cmd ls s3://bak_$CRMACCT | sed -e's/  */ /g' | cut -d ' ' -f 4 | grep $DATE | grep .backup$ | head -1`
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+BUDATE="_${DATE}"
+echo "Backup Date is $DATE"
+S3BACKUPS=`s3cmd ls s3://bak_$CRMACCT | sed -e's/  */ /g' | cut -d ' ' -f 4 | grep $BUDATE | grep .backup$ | head -1`
 echo "S3Backups = $S3BACKUPS"
 }
 
 s3download()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 BACKUPFILE="${S3BACKUPS##*/}"
 if [ -z $BACKUPFILE ];
 then
@@ -151,6 +162,7 @@ fi
 
 stopdb()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER}-${XTVER}-${XTTYPE} stop --force"
 echo "$cmd"
 ACT=`$cmd`
@@ -161,6 +173,7 @@ sendslack
 
 stopmobile()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 cmd="sudo service xtuple stop ${PGCLUSTER} ${XTVER} ${XTTYPE}"
 echo "$cmd"
 ACT=`$cmd`
@@ -172,6 +185,7 @@ sendslack
 
 startdb()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER}-${XTVER}-${XTTYPE} start"
 echo "$cmd"
 ACT=`$cmd`
@@ -182,11 +196,14 @@ sendslack
 
 initpgcmd()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 PGCMD="psql -At -U ${PGUSER} -p ${PGPORT} -h ${PGHOST}"
+echo ${PGCMD}
 }
 
 dropdb()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 DROPDB=`${PGCMD} postgres -c "DROP DATABASE ${DBNAME};"`
 echo "Dropped $DBNAME"
 SLACK_MESSAGE="Dropped ${DBNAME}"
@@ -196,6 +213,7 @@ sendslack
 
 createdb()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 CREATEDB=`${PGCMD} postgres -c "CREATE DATABASE ${DBNAME} OWNER ${PGUSER};"`
 echo "Created $DBNAME"
 SLACK_MESSAGE="Created ${DBNAME}"
@@ -205,6 +223,7 @@ sendslack
 
 restoredb()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Started ${DBNAME} Restore: ${STARTTIME}"
 sendslack
@@ -217,9 +236,10 @@ sendslack
 
 checkdb()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 PGQRY="select now();"
 CHECK=`${PGCMD} ${DBNAME} -c "select now();"`
-# echo "$CHECK"
+echo "$CHECK"
 
 $PGCMD ${DBNAME} < ${SQLDIR}/getpkgver.sql
 XTVERS=`$PGCMD ${DBNAME} -c \
@@ -232,10 +252,9 @@ UNION \
 SELECT 4,'Pk: '||pkghead_name||':'||getpkgver(pkghead_name) \
 FROM pkghead) as foo ORDER BY 1;"`
 
-#echo " "
-#echo "${DB} Info"
-#echo "==============="
-#echo "${XTVER}"
+echo "${DB} Info"
+echo "==============="
+echo "${XTVER}"
 SLACK_MESSAGE="Checked ${DBNAME}"
 sendslack
 
@@ -243,6 +262,7 @@ sendslack
 
 runpresql()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 PRESQL="${WORKING}/custsql/${PRESQL}"
 if [ -e $PRESQL ];
 then
@@ -258,6 +278,7 @@ fi
 
 rundropsql()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 DROPSQL="${WORKING}/custsql/${DROPSQL}"
 if [ -e $DROPSQL ];
 then
@@ -267,12 +288,13 @@ CMD=`${PGCMD} ${DBNAME} < ${PRESQL}`
 SLACK_MESSAGE="Ran ${CUSTSQL}"
 sendslack
 else
-echo "no drop file."
+echo "No drop file."
 fi
 }
 
 runpostsql()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 POSTSQL="${WORKING}/custsql/${POSTSQL}"
 if [ -e $POSTSQL ];
 then
@@ -288,6 +310,7 @@ fi
 
 checkxtver()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 CKXTVER=`${PGCMD} ${DBNAME} -c "SELECT getpkgver('xt');"`
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="XTVERSION is ${CKXTVER}. Done at ${STOPTIME}"
@@ -296,6 +319,7 @@ sendslack
 
 startmobile()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 cmd="sudo service xtuple start ${PGCLUSTER} ${XTVER} ${XTTYPE}"
 echo "$cmd"
 ACT=`$cmd`
@@ -307,13 +331,16 @@ sendslack
 
 checkmobile()
 {
+exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
 CKMOB=`${PGCMD} ${DBNAME} -c "SELECT getpkgver('xt');"`
 if [ -z $CKMOB ];
 then
 SLACK_MESSAGE="No Mobile, running updater"
+echo "${SLACK_MESSAGE}"
 sendslack
 else
 SLACK_MESSAGE="Mobile ${CKMOB} found. Running ${XTPATH}/scripts/build_app.js -c ${XTCFG} with node $NVER"
+echo "${SLACK_MESSAGE}"
 sendslack
 sudo n $NVER
 sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG}
@@ -338,9 +365,9 @@ stopmobile
 startdb
 initpgcmd
 
-dropdb
-createdb
-restoredb
+#dropdb
+#createdb
+#restoredb
 
 checkdb
 
