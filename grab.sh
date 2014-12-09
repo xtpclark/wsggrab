@@ -4,7 +4,7 @@
 
 exec 3>&1 4>&2
 trap 'exec 2>&4 1>&3' 0 1 2 3
-exec 1>log.out 2>&1
+# exec 1>log.out 2>&1
 
 EDITOR=vi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -64,7 +64,7 @@ sendslack()
 # filename=$BACKUPFILE
 # MESSAGE='WSGLoad found and downloaded a database named '
 payload="payload={\"channel\": \"${SLACK_CHANNEL}\", \"username\": \"${SLACK_USERNAME}\", \"text\": \"${SLACK_MESSAGE}\", \"icon_emoji\": \"${emoji}\"}"
-curl -X POST --data-urlencode "${payload}" ${SLACK_HOOK}
+curl -s -X POST --data-urlencode "${payload}" ${SLACK_HOOK}
 }
 
 enviro()
@@ -98,7 +98,12 @@ custsettings()
 if [ -e $CUSTSETS ]
 then
 source $CUSTSETS
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+echo ""
+
 echo "Using ${CUSTSETS}"
 else
 echo "No Settings"
@@ -118,7 +123,10 @@ echo "Created ${DIR}/ ${DIRS}"
 
 s3check ()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
 BUDATE="_${DATE}"
 echo "Backup Date is $DATE"
 S3BACKUPS=`s3cmd ls s3://bak_$CRMACCT | sed -e's/  */ /g' | cut -d ' ' -f 4 | grep $BUDATE | grep .backup$ | head -1`
@@ -127,7 +135,11 @@ echo "S3Backups = $S3BACKUPS"
 
 s3download()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 BACKUPFILE="${S3BACKUPS##*/}"
 if [ -z $BACKUPFILE ];
 then
@@ -136,7 +148,7 @@ exit 0;
 else
 S3SIZE=`s3cmd ls --list-md5 $S3BACKUPS | sed -e's/  */ /g' | cut -d ' ' -f 3`
 echo "${S3MD5}"
-echo "s3cmd get --skip-existing $S3BACKUPS ${BAKDIR}/${BACKUPFILE}"
+echo "s3cmd get --no-progress --skip-existing $S3BACKUPS ${BAKDIR}/${BACKUPFILE}"
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Started DL ${BACKUPFILE} ${STARTTIME}"
 sendslack
@@ -146,8 +158,7 @@ SLACK_MESSAGE="Downloaded ${BACKUPFILE} ${STOPTIME}"
 sendslack
 
 DLSIZE=`ls -lk ${BAKDIR}/${BACKUPFILE} | cut -d' ' -f5`
-echo "On S3 ${S3SIZE}"
-echo "On Disk ${DLSIZE}"
+echo "On S3 ${S3SIZE}, On Disk ${DLSIZE}"
 if [ ${S3SIZE} = ${DLSIZE} ];
 then
 echo "Size is good"
@@ -162,7 +173,11 @@ fi
 
 stopdb()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER}-${XTVER}-${XTTYPE} stop --force"
 echo "$cmd"
 ACT=`$cmd`
@@ -173,7 +188,11 @@ sendslack
 
 stopmobile()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 cmd="sudo service xtuple stop ${PGCLUSTER} ${XTVER} ${XTTYPE}"
 echo "$cmd"
 ACT=`$cmd`
@@ -185,7 +204,11 @@ sendslack
 
 startdb()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER}-${XTVER}-${XTTYPE} start"
 echo "$cmd"
 ACT=`$cmd`
@@ -196,14 +219,22 @@ sendslack
 
 initpgcmd()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 PGCMD="psql -At -U ${PGUSER} -p ${PGPORT} -h ${PGHOST}"
 echo ${PGCMD}
 }
 
 dropdb()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 DROPDB=`${PGCMD} postgres -c "DROP DATABASE ${DBNAME};"`
 echo "Dropped $DBNAME"
 SLACK_MESSAGE="Dropped ${DBNAME}"
@@ -213,7 +244,11 @@ sendslack
 
 createdb()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 CREATEDB=`${PGCMD} postgres -c "CREATE DATABASE ${DBNAME} OWNER ${PGUSER};"`
 echo "Created $DBNAME"
 SLACK_MESSAGE="Created ${DBNAME}"
@@ -223,7 +258,11 @@ sendslack
 
 restoredb()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Started ${DBNAME} Restore: ${STARTTIME}"
 sendslack
@@ -236,7 +275,11 @@ sendslack
 
 checkdb()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 PGQRY="select now();"
 CHECK=`${PGCMD} ${DBNAME} -c "select now();"`
 echo "$CHECK"
@@ -254,7 +297,7 @@ FROM pkghead) as foo ORDER BY 1;"`
 
 echo "${DB} Info"
 echo "==============="
-echo "${XTVER}"
+echo "${XTVERS}"
 SLACK_MESSAGE="Checked ${DBNAME}"
 sendslack
 
@@ -262,55 +305,85 @@ sendslack
 
 runpresql()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 PRESQL="${WORKING}/custsql/${PRESQL}"
 if [ -e $PRESQL ];
 then
 SLACK_MESSAGE="Running presql file ${PRESQL} on ${DBNAME}"
+echo $SLACK_MESSAGE
 sendslack
 CMD=`${PGCMD} ${DBNAME} < ${PRESQL}`
-SLACK_MESSAGE="Ran ${CUSTSQL}"
+SLACK_MESSAGE="Ran ${PRESQL}"
+echo $SLACK_MESSAGE
 sendslack
 else
-echo "no pre file."
+SLACK_MESSAGE="no presql file."
+echo $SLACK_MESSAGE
+sendslack
 fi
 }
 
 rundropsql()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 DROPSQL="${WORKING}/custsql/${DROPSQL}"
 if [ -e $DROPSQL ];
 then
 SLACK_MESSAGE="Running dropsql file ${DROPSQL} on ${DBNAME}"
+echo $SLACK_MESSAGE
 sendslack
-CMD=`${PGCMD} ${DBNAME} < ${PRESQL}`
-SLACK_MESSAGE="Ran ${CUSTSQL}"
+CMD=`${PGCMD} ${DBNAME} < ${DROPSQL}`
+SLACK_MESSAGE="Ran ${DROPSQL}"
+echo $SLACK_MESSAGE
 sendslack
 else
-echo "No drop file."
+SLACK_MESSAGE="no dropsql file."
+echo $SLACK_MESSAGE
+sendslack
+
 fi
 }
 
 runpostsql()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 POSTSQL="${WORKING}/custsql/${POSTSQL}"
 if [ -e $POSTSQL ];
 then
 SLACK_MESSAGE="Running postsql file ${POSTSQL} on ${DBNAME}"
+echo $SLACK_MESSAGE
 sendslack
 CMD=`${PGCMD} ${DBNAME} < ${POSTSQL}`
 SLACK_MESSAGE="Ran ${POSTSQL}"
+echo $SLACK_MESSAGE
 sendslack
 else
-echo "no postsql file."
+SLACK_MESSAGE="no postsql file."
+echo $SLACK_MESSAGE
+sendslack
+
 fi
 }
 
 checkxtver()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 CKXTVER=`${PGCMD} ${DBNAME} -c "SELECT getpkgver('xt');"`
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="XTVERSION is ${CKXTVER}. Done at ${STOPTIME}"
@@ -319,7 +392,11 @@ sendslack
 
 startmobile()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 cmd="sudo service xtuple start ${PGCLUSTER} ${XTVER} ${XTTYPE}"
 echo "$cmd"
 ACT=`$cmd`
@@ -331,7 +408,11 @@ sendslack
 
 checkmobile()
 {
-exec 1>${LOGDIR}/${CRMACCT}_${DATE}_${FUNCNAME[0]}_log.out 2>&1
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
 CKMOB=`${PGCMD} ${DBNAME} -c "SELECT getpkgver('xt');"`
 if [ -z $CKMOB ];
 then
@@ -351,6 +432,58 @@ fi
 sendreport()
 {
 echo placeholder
+}
+
+makereport()
+{
+EC2DATA=`ec2metadata --instance-id --local-ipv4 --public-ipv4 --availability-zone`
+
+REPORT=$REPORTDIR/${CUST}_${WORKDATE}.log
+cat << EOF >> $REPORT
+
+Install Date: ${PLAINDATE}
+
+Customer: ${CUST}
+Mobile Version: ${XTVER}
+Edition: ${EDITION}
+
+MobileURL: $XTFQDN
+AdminUser: $XTADMIN
+AdminPass: $XTPASS
+
+==Desktop Client Information==
+Client Version: ${XTAPPVER}
+Server: $XTFQDN
+Port: $CUSTPORT
+Database: ${DB}
+
+==Details for ${DB}==
+DB linked to: ${ORIGDB}
+$XTDETAIL
+
+==xTuple Server Command==
+$CMD
+
+==EC2Data==
+$EC2DATA
+
+EOF
+}
+
+mailreport()
+{
+REPORT=${LOGDIR}/${CRMACCT}_${DATE}_log.out
+MAILPRGM=`which mutt`
+if [ -z $MAILPRGM ]; then
+echo "Couldn't mail anything - no mailer."
+echo "Set up Mutt."
+true
+else
+MSUB="Mobile Instance loaded by xsInstaller for you on $HOSTNAME"
+MES="${REPORT}"
+
+$MAILPRGM -s "WSG CloudOps Mobilized $DBNAME for you on $HOSTNAME" $MTO < $MES
+fi
 }
 
 enviro
@@ -381,3 +514,6 @@ runpostsql
 checkxtver
 startmobile
 #sendslack
+# makereport
+mailreport
+exit 0;
