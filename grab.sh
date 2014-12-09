@@ -140,7 +140,7 @@ echo "s3cmd get --skip-existing $S3BACKUPS ${BAKDIR}/${BACKUPFILE}"
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Started DL ${BACKUPFILE} ${STARTTIME}"
 sendslack
-s3cmd get --skip-existing $S3BACKUPS ${BAKDIR}/${BACKUPFILE}
+s3cmd get --no-progress --skip-existing $S3BACKUPS ${BAKDIR}/${BACKUPFILE}
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="Downloaded ${BACKUPFILE} ${STOPTIME}"
 sendslack
@@ -365,9 +365,9 @@ stopmobile
 startdb
 initpgcmd
 
-#dropdb
-#createdb
-#restoredb
+dropdb
+createdb
+restoredb
 
 checkdb
 
