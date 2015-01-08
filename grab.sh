@@ -1,10 +1,9 @@
 #!/bin/bash
-#set -vx
+# set -vx
 # set -eu
 
 exec 3>&1 4>&2
 trap 'exec 2>&4 1>&3' 0 1 2 3
-# exec 1>log.out 2>&1
 
 EDITOR=vi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -57,6 +56,21 @@ elif [ $# -gt 1 ] ; then
 echo $PROG: ignoring more than the first 1
 fi
 
+setup()
+{
+DIRS='xtupledb custini custsql ini log'
+set -- $DIRS
+for i in "$@"
+do
+ if [ -d $i ];
+then
+echo "Directory $i exists"
+else
+echo "$i does not exists, creating."
+mkdir -p $i
+fi
+done
+}
 
 sendslack()
 {
@@ -73,7 +87,7 @@ BAKDIR=${WORKING}/xtupledb
 SQLDIR=${WORKING}/sql
 LOGDIR=${WORKING}/log
 SETS=${WORKING}/ini/settings.ini
-CUSTSETS=${WORKING}/ini/${CUSTSET}
+CUSTSETS=${WORKING}/custini/${CUSTSET}
 EC2IPV4=`ec2metadata --public-ipv4`
 }
 
@@ -109,16 +123,6 @@ else
 echo "No Settings"
 exit 0;
 fi
-}
-
-
-setup()
-{
-#Setup Directories
-DIRS='xtupledb'
-echo "Creating local directories"
-mkdir -p $DIR/ $DIRS
-echo "Created ${DIR}/ ${DIRS}"
 }
 
 s3check ()
@@ -352,6 +356,17 @@ sendslack
 fi
 }
 
+runupdater()
+{
+# TODO - PUT THE AUTO UPDATER CODE INLINE IN HERE... For Getting the logging in one place...
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
+bash -x $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF
+}
+
 runpostsql()
 {
 exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
@@ -385,6 +400,12 @@ echo "================"
 echo "In ${FUNCNAME[0]}"
 
 CKXTVER=`${PGCMD} ${DBNAME} -c "SELECT getpkgver('xt');"`
+
+if [ -z $CKXTVER ];
+then
+CKXTVER='NOT_FOUND'
+fi
+
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="XTVERSION is ${CKXTVER}. Done at ${STOPTIME}"
 sendslack
@@ -419,6 +440,8 @@ then
 SLACK_MESSAGE="No Mobile, running updater"
 echo "${SLACK_MESSAGE}"
 sendslack
+
+
 else
 SLACK_MESSAGE="Mobile ${CKMOB} found. Running ${XTPATH}/scripts/build_app.js -c ${XTCFG} with node $NVER"
 echo "${SLACK_MESSAGE}"
@@ -428,6 +451,21 @@ sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG}
 checkxtver
 fi
 }
+
+runbuildapp()
+{
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+SLACK_MESSAGE="Running ${XTPATH}/scripts/build_app.js -c ${XTCFG} with node $NVER"
+echo "${SLACK_MESSAGE}"
+sendslack
+sudo n $NVER
+sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG}
+checkxtver
+}
+
 
 sendreport()
 {
@@ -486,34 +524,101 @@ $MAILPRGM -s "WSG CloudOps Mobilized $DBNAME for you on $HOSTNAME" $MTO < $MES
 fi
 }
 
+# We want to do this every time.
 enviro
 settings
 custsettings
 
+if [[ "$RUNDLNEWDB" == 1 ]];
+then
 s3check
-
 s3download
+else
+echo "Not checking S3"
+fi
+
+# Probably want to do this every time.
 stopdb
 stopmobile
 startdb
 initpgcmd
 
+if [[ "$RUNRESTORE" == 1 ]];
+then
 dropdb
 createdb
 restoredb
+else
+echo "Not dropping, creating or restoring"
+fi
 
-checkdb
+if [[ "$RUNPRE" == 1 ]];
+ then
+    runpresql
+ else
+ echo "Skipping runpresql"
+fi
 
-runpresql
-rundropsql
+if [[ "$RUNDROP" == 1 ]];
+ then
+    rundropsql
+ else
+ echo "Skipping rundropsql"
+fi
 
-checkmobile
+if [[ "$RUNUPDATER" == 1 ]];
+ then
+    runupdater
+fi
 
-runpostsql
-
-checkxtver
-startmobile
-#sendslack
-# makereport
-mailreport
+if [[ "$RUNBUILDAPP" == 1 ]];
+ then
+runbuildapp
 exit 0;
+else
+echo "Not running build_app"
+fi
+
+if [[ "$RUNPOST" == 1 ]];
+ then
+    runpostsql
+ else
+ echo "Skipping runpostsql"
+fi
+
+
+if [[ "$RUNMOBILE" == 1 ]];
+ then
+  checkdb
+  runpresql
+  rundropsql
+
+if [[ "$RUNUPDATERAFTERMOBILE" == 1 ]];
+ then
+  runupdater
+ else
+echo "Not running updater after mobile"
+fi
+
+  checkmobile
+#  runpostsql
+  checkxtver
+  startmobile
+
+
+else
+  checkdb
+#  runpresql
+#  rundropsql
+#  checkmobile
+#  runpostsql
+  checkxtver
+#  startmobile
+fi
+
+# Want to do this everytime.
+  mailreport
+
+
+exit 0;
+
