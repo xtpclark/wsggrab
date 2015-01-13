@@ -131,7 +131,7 @@ exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
 echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
-BUDATE="_${DATE}"
+BUDATE="${DATE}"
 echo "Backup Date is $DATE"
 S3BACKUPS=`s3cmd ls s3://bak_$CRMACCT | sed -e's/  */ /g' | cut -d ' ' -f 4 | grep $BUDATE | grep .backup$ | head -1`
 echo "S3Backups = $S3BACKUPS"
@@ -359,12 +359,23 @@ fi
 runupdater()
 {
 # TODO - PUT THE AUTO UPDATER CODE INLINE IN HERE... For Getting the logging in one place...
+
 exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
 echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
+STARTTIME=`date "+%T"`
+SLACK_MESSAGE="Started Headless Updater: ${STARTTIME}"
+echo $SLACK_MESSAGE
+sendslack
 
-bash -x $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF
+bash $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF
+
+STOPTIME=`date "+%T"`
+SLACK_MESSAGE="Completed Headless Updater: ${STOPTIME}"
+echo $SLACK_MESSAGE
+sendslack
+
 }
 
 runpostsql()
@@ -458,11 +469,30 @@ exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
 echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
-SLACK_MESSAGE="Running ${XTPATH}/scripts/build_app.js -c ${XTCFG} with node $NVER"
+STARTTIME=`date "+%T"`
+SLACK_MESSAGE="Running Build:${STARTTIME}: ${XTPATH}/scripts/build_app.js -c ${XTCFG} with n $NVER"
 echo "${SLACK_MESSAGE}"
 sendslack
 sudo n $NVER
 sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG}
+checkxtver
+STOPTIME=`date "+%T"`
+SLACK_MESSAGE="Completed Applying Build:${STOPTIME}:"
+echo "${SLACK_MESSAGE}"
+sendslack
+}
+
+runxdruple()
+{
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+SLACK_MESSAGE="Applying xDruple: ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple with node $NVER"
+echo "${SLACK_MESSAGE}"
+sendslack
+sudo n $NVER
+sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple
 checkxtver
 }
 
@@ -574,9 +604,15 @@ fi
 if [[ "$RUNBUILDAPP" == 1 ]];
  then
 runbuildapp
-exit 0;
 else
 echo "Not running build_app"
+fi
+
+if [[ "$RUNXDRUPLE" == 1 ]];
+ then
+runxdruple
+else
+echo "Not running build_app for xdruple"
 fi
 
 if [[ "$RUNPOST" == 1 ]];
@@ -584,6 +620,14 @@ if [[ "$RUNPOST" == 1 ]];
     runpostsql
  else
  echo "Skipping runpostsql"
+fi
+
+if [[ "$STARTMOBILE" == 1 ]];
+ then
+   stopmobile 
+   startmobile
+ else
+ echo "Skipping startstopmobile"
 fi
 
 
@@ -616,8 +660,7 @@ else
 #  startmobile
 fi
 
-# Want to do this everytime.
-  mailreport
+mailreport
 
 
 exit 0;
