@@ -645,19 +645,13 @@ echo "Not running updater after mobile"
 fi
 
   checkmobile
-#  runpostsql
   checkxtver
   startmobile
 
 
 else
   checkdb
-#  runpresql
-#  rundropsql
-#  checkmobile
-#  runpostsql
   checkxtver
-#  startmobile
 fi
 
 mailreport
