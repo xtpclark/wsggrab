@@ -58,7 +58,7 @@ fi
 
 setup()
 {
-DIRS='xtupledb custini custsql ini log'
+DIRS='xtupledb custini custbak custsql ini log'
 set -- $DIRS
 for i in "$@"
 do
@@ -88,6 +88,7 @@ SQLDIR=${WORKING}/sql
 LOGDIR=${WORKING}/log
 SETS=${WORKING}/ini/settings.ini
 CUSTSETS=${WORKING}/custini/${CUSTSET}
+CUSTBAK=${WORKING}/custbak
 EC2IPV4=`ec2metadata --public-ipv4`
 }
 
@@ -246,6 +247,38 @@ sendslack
 
 }
 
+repairglobals()
+{
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
+USRLIST=`${PGCMD} postgres -c "SELECT rolname FROM pg_roles WHERE rolname NOT IN ('postgres','admin','xtrole','monitor');"`
+
+for USR in ${USRLIST}; do
+
+cat << EOF >> ${CRMACCT}_${DATE}_dropusers.sql
+DROP USER '$USER';
+EOF
+done;
+
+${PGCMD} postgres < ${CRMACCT}_${DATE}_dropusers.sql
+
+echo "Dropped Users"
+SLACK_MESSAGE="Dropped Users"
+sendslack
+
+GLOBALFILE=`s3cmd ls s3://bak_$CRMACCT | sed -e's/  */ /g' | cut -d ' ' -f 4 | grep global | grep $BUDATE | grep .sql$ | head -1`
+s3cmd get --no-progress --skip-existing $GLOBALFILE ${BAKDIR}/${GLOBALFILE}
+
+${PGCMD} postgres < ${BAKDIR}/${GLOBALFILE}
+
+echo "Restored Globals"
+SLACK_MESSAGE="Restored Globals"
+sendslack
+}
+
 createdb()
 {
 exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
@@ -275,6 +308,60 @@ RESTOREDB=`pg_restore -U ${PGUSER} -p ${PGPORT} -h ${PGHOST} -d ${DBNAME} ${REST
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="Completed ${DBNAME} Restore: ${STOPTIME}"
 sendslack
+}
+
+
+
+bakcustschema()
+{
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
+STARTTIME=`date "+%T"`
+SLACK_MESSAGE="Backing Up Custom Schemas ${CUSTSCHEMALIST} : ${STARTTIME}"
+sendslack
+
+for CUSTSCHEMA in $CUSTSCHEMALIST; do
+pg_dump -U ${PGUSER} -p ${PGPORT} -h ${PGHOST} --format plain --file ${CUSTBAK}/${DBNAME}_${CUSTSCHEMA}_${WORKDATE}.sql --schema ${CUSTSCHEMA} ${DBNAME}
+
+SLACK_MESSAGE="Completed backup of $CUSTSCHEMA"
+sendslack
+
+done;
+STOPTIME=`date "+%T"`
+SLACK_MESSAGE="Completed Backing Up Custom Schemas ${CUSTSCHEMALIST} : ${STOPTIME}"
+sendslack
+
+}
+
+restorecustschema()
+{
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+
+STARTTIME=`date "+%T"`
+SLACK_MESSAGE="Starting Ordered Restore of Custom Schemas : ${CUSTSCHEMARESTOREORDER} ${STARTTIME}"
+sendslack
+
+for ORDEREDSCHEMANAME in ${CUSTSCHEMARESTOREORDER}; do
+
+# Add an existance check and log at some point...
+CUSTSCHEMADUMP=${CUSTBAK}/${DBNAME}_${ORDEREDSCHEMANAME}_${WORKDATE}.sql
+
+psql -U ${PGUSER} -p ${PGPORT} -h ${PGHOST} ${DBNAME} < ${CUSTSCHEMADUMP}
+
+SLACK_MESSAGE="Completed Ordered Restore of ${CUSTSCHEMADUMP}"
+sendslack
+
+done;
+STOPTIME=`date "+%T"`
+SLACK_MESSAGE="Completed Ordered Restore of Custom Schemas : ${STOPTIME}"
+sendslack
+
 }
 
 checkdb()
@@ -496,6 +583,11 @@ sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple
 checkxtver
 }
 
+sendtos3()
+{
+true
+}
+
 
 sendreport()
 {
@@ -582,6 +674,21 @@ else
 echo "Not dropping, creating or restoring"
 fi
 
+if [[ "$REPAIRGLOBALS" == 1 ]];
+then
+repairglobals
+else
+echo "Not messing with globals"
+fi
+
+if [[ "$RUNCUSTSCHEMABAK" == 1 ]];
+then
+bakcustschema
+else
+echo "Not backing up custom schemas"
+fi
+
+
 if [[ "$RUNPRE" == 1 ]];
  then
     runpresql
@@ -615,12 +722,21 @@ else
 echo "Not running build_app for xdruple"
 fi
 
+if [[ "$RUNCUSTSCHEMARESTORE" == 1 ]];
+then
+restorecustschema
+else
+echo "Not restoring custom schemas"
+fi
+
+
 if [[ "$RUNPOST" == 1 ]];
  then
     runpostsql
  else
  echo "Skipping runpostsql"
 fi
+
 
 if [[ "$STARTMOBILE" == 1 ]];
  then
