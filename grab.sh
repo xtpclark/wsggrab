@@ -611,6 +611,35 @@ sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple
 checkxtver
 }
 
+runquality()
+{
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+SLACK_MESSAGE="Applying Quality: ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/quality with node $NVER"
+echo "${SLACK_MESSAGE}"
+sendslack
+sudo n $NVER
+sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/quality
+checkxtver
+}
+
+runregmgmt()
+{
+### /usr/local/wsgasset/.xtuple/dist/4.9.x/registration-management/resources
+exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
+echo ""
+echo "================"
+echo "In ${FUNCNAME[0]}"
+SLACK_MESSAGE="Applying regmgmt: ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e registration-management/resources with node $NVER"
+echo "${SLACK_MESSAGE}"
+sendslack
+sudo n $NVER
+sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e /usr/local/wsgasset/.xtuple/dist/4.9.x/registration-management/resources
+checkxtver
+}
+
 sendtos3()
 {
 true
@@ -747,6 +776,20 @@ if [[ "$RUNXDRUPLE" == 1 ]];
 runxdruple
 else
 echo "Not running build_app for xdruple"
+fi
+
+if [[ "$RUNQUALITY" == 1 ]];
+ then
+runquality
+else
+echo "Not running build_app for quality"
+fi
+
+if [[ "$RUNREGMGMT" == 1 ]];
+ then
+runregmgmt
+else
+echo "Not running build_app for regmgmt"
 fi
 
 if [[ "$RUNCUSTSCHEMARESTORE" == 1 ]];
