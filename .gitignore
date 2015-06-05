@@ -11,7 +11,7 @@ berg/
 *.backup
 *OLD
 *globals*.sql
-*_upgrade_scripts/
+*_upgrade_script*
 *.log.out
 *.log
 *.sql
