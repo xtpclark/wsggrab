@@ -72,34 +72,23 @@ fi
 done
 }
 
-sendslack()
-{
-# Read in from $SETS
-# filename=$BACKUPFILE
-# MESSAGE='WSGLoad found and downloaded a database named '
-payload="payload={\"channel\": \"${SLACK_CHANNEL}\", \"username\": \"${SLACK_USERNAME}\", \"text\": \"${SLACK_MESSAGE}\", \"icon_emoji\": \"${emoji}\"}"
-curl -s -X POST --data-urlencode "${payload}" ${SLACK_HOOK}
-}
-
 enviro()
 {
 BAKDIR=${WORKING}/xtupledb
 SQLDIR=${WORKING}/sql
 LOGDIR=${WORKING}/log
 SETS=${WORKING}/ini/settings.ini
-CUSTSETS=${WORKING}/custini/${CUSTSET}
+CUSTSETS=${CUSTSET}
 CUSTBAK=${WORKING}/custbak
 EC2IPV4=`ec2metadata --public-ipv4`
 }
-
-
 
 settings()
 {
 if [ -e $SETS ]
 then
 source $SETS
-SLACK_MESSAGE="Starting WSGLoad"
+SLACK_MESSAGE="Starting xTransmogrifier"
 sendslack
 else
 echo "No Settings"
@@ -124,6 +113,19 @@ else
 echo "No Settings"
 exit 0;
 fi
+}
+
+sendslack()
+{
+if [[ "$USESLACKMSG" == 1 ]];
+ then
+payload="payload={\"channel\": \"${SLACK_CHANNEL}\", \"username\": \"${SLACK_USERNAME}\", \"text\": \"${SLACK_MESSAGE}\", \"icon_emoji\": \"${emoji}\"}"
+curl -s -X POST --data-urlencode "${payload}" ${SLACK_HOOK}
+echo ${SLACK_MESSAGE}
+ else
+echo ${SLACK_MESSAGE}
+fi
+
 }
 
 s3check ()
@@ -183,7 +185,13 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
+if [[ "$USEINIT" == 1 ]];
+ then
+cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER} stop --force"
+ else
 cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER}-${XTVER}-${XTTYPE} stop --force"
+fi
+
 echo "$cmd"
 ACT=`$cmd`
 SLACK_MESSAGE="Stopped $DBNAME"
@@ -198,10 +206,16 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
+if [[ "$USEINIT" == 1 ]];
+ then
+cmd="sudo service ${INITSCRIPT} stop"
+ else
 cmd="sudo service xtuple stop ${PGCLUSTER} ${XTVER} ${XTTYPE}"
+fi
+
 echo "$cmd"
 ACT=`$cmd`
-SLACK_MESSAGE="Stopped xtuple service for ${PGCLUSTER}"
+SLACK_MESSAGE="Stopped ${INITSCRIPT} service"
 sendslack
 
 }
@@ -214,7 +228,13 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
+if [[ "$USEINIT" == 1 ]];
+ then
+cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER} start"
+ else
 cmd="sudo pg_ctlcluster ${PGVER} ${PGCLUSTER}-${XTVER}-${XTTYPE} start"
+fi
+
 echo "$cmd"
 ACT=`$cmd`
 SLACK_MESSAGE="Started PG for ${PGCLUSTER}"
@@ -325,7 +345,7 @@ sendslack
 for CUSTSCHEMA in $CUSTSCHEMALIST; do
 pg_dump -U ${PGUSER} -p ${PGPORT} -h ${PGHOST} --format plain --file ${CUSTBAK}/${DBNAME}_${CUSTSCHEMA}_${WORKDATE}.sql --schema ${CUSTSCHEMA} ${DBNAME}
 
-`SLACK_MESSAGE="Completed backup of $CUSTSCHEMA"
+SLACK_MESSAGE="Completed backup of $CUSTSCHEMA"
 sendslack
 
 done;
@@ -429,21 +449,41 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
-PRESQL="${WORKING}/custsql/${PRESQL}"
 if [ -e $PRESQL ];
 then
 SLACK_MESSAGE="Running presql file ${PRESQL} on ${DBNAME}"
 echo $SLACK_MESSAGE
 sendslack
-CMD=`${PGCMD} ${DBNAME} < ${PRESQL}`
-SLACK_MESSAGE="Ran ${PRESQL}"
-echo $SLACK_MESSAGE
-sendslack
+
+OLDIFS=$IFS
+IFS="
+"
+   for F in $(cat $PRESQL) ; do
+
+ res=`$PGCMD ${DBNAME} < ${PREPATH}/${F}`
+
+echo "Command Was: $res"
+echo "PRESQL = $PRESQL"
+echo "PREPATH = $PREPATH"
+echo "File is $F"
+echo "$PGCMD ${DBNAME} < ${PREPATH}/${F}"
+
+   SLACK_MESSAGE="Ran ${PRESQL}"
+   echo $SLACK_MESSAGE
+   sendslack
+ done
+
 else
+
 SLACK_MESSAGE="no presql file."
 echo $SLACK_MESSAGE
 sendslack
 fi
+
+CK_MESSAGE="Restored ${F}"
+sendslack
+IFS=$OLDIFS
+
 }
 
 rundropsql()
@@ -453,22 +493,37 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
-DROPSQL="${WORKING}/custsql/${DROPSQL}"
+# DROPSQL="${WORKING}/custsql/${DROPSQL}"
 if [ -e $DROPSQL ];
 then
 SLACK_MESSAGE="Running dropsql file ${DROPSQL} on ${DBNAME}"
 echo $SLACK_MESSAGE
 sendslack
-CMD=`${PGCMD} ${DBNAME} < ${DROPSQL}`
+
+OLDIFS=$IFS
+IFS="
+"
+for F in $(cat $DROPSQL) ; do
+
+res=`$PGCMD ${DBNAME} < ${PREPATH}/${F}`
+
+echo $res
+
+echo "$PGCMD ${DBNAME} < ${PREPATH}/${F}"
+
 SLACK_MESSAGE="Ran ${DROPSQL}"
 echo $SLACK_MESSAGE
 sendslack
+done
+
 else
 SLACK_MESSAGE="no dropsql file."
 echo $SLACK_MESSAGE
 sendslack
 
 fi
+IFS=$OLDIFS
+
 }
 
 runupdater()
@@ -480,10 +535,12 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 STARTTIME=`date "+%T"`
-SLACK_MESSAGE="Started Headless Updater: ${STARTTIME}"
+SLACK_MESSAGE="Started Headless Updater: ${STARTTIME} $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF"
 echo $SLACK_MESSAGE
 sendslack
 
+echo "$AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF"
+## exit 0;
 bash $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF
 
 STOPTIME=`date "+%T"`
@@ -500,22 +557,38 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
-POSTSQL="${WORKING}/custsql/${POSTSQL}"
+# POSTSQL="${WORKING}/custsql/${POSTSQL}"
 if [ -e $POSTSQL ];
 then
 SLACK_MESSAGE="Running postsql file ${POSTSQL} on ${DBNAME}"
 echo $SLACK_MESSAGE
 sendslack
-CMD=`${PGCMD} ${DBNAME} < ${POSTSQL}`
+
+OLDIFS=$IFS
+IFS="
+"
+for F in $(cat $POSTSQL) ; do
+
+res=`$PGCMD ${DBNAME} < ${PREPATH}/${F}`
+
+echo $res
+echo "$PGCMD ${DBNAME} < ${PREPATH}/${F}"
+
 SLACK_MESSAGE="Ran ${POSTSQL}"
 echo $SLACK_MESSAGE
 sendslack
+
+done
+
 else
 SLACK_MESSAGE="no postsql file."
 echo $SLACK_MESSAGE
 sendslack
 
 fi
+IFS=$OLDIFS
+
+
 }
 
 checkxtver()
@@ -544,11 +617,18 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
+if [[ "$USEINIT" == 1 ]];
+ then
+cmd="sudo service ${INITSCRIPT} start"
+SLACK_MESSAGE="Started service ${INITSCRIPT} for ${PGCLUSTER} at ${STARTTIME} on ${EC2IPV4}"
+ else
 cmd="sudo service xtuple start ${PGCLUSTER} ${XTVER} ${XTTYPE}"
+SLACK_MESSAGE="Started xtuple service for ${PGCLUSTER} at ${STARTTIME} on ${EC2IPV4}"
+fi
+
 echo "$cmd"
 ACT=`$cmd`
 STARTTIME=`date "+%T"`
-SLACK_MESSAGE="Started xtuple service for ${PGCLUSTER} at ${STARTTIME} on ${EC2IPV4}"
 sendslack
 
 }
@@ -566,7 +646,6 @@ then
 SLACK_MESSAGE="No Mobile, running updater"
 echo "${SLACK_MESSAGE}"
 sendslack
-
 
 else
 SLACK_MESSAGE="Mobile ${CKMOB} found. Running ${XTPATH}/scripts/build_app.js -c ${XTCFG} with node $NVER"
@@ -611,6 +690,7 @@ sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple
 checkxtver
 }
 
+
 runquality()
 {
 exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
@@ -627,7 +707,6 @@ checkxtver
 
 runregmgmt()
 {
-### /usr/local/wsgasset/.xtuple/dist/4.9.x/registration-management/resources
 exec 1>>${LOGDIR}/${CRMACCT}_${DATE}_log.out 2>&1
 echo ""
 echo "================"
@@ -661,7 +740,7 @@ cat << EOF >> $REPORT
 Install Date: ${PLAINDATE}
 
 Customer: ${CUST}
-Mobile Version: ${XTVER}
+Mobile Version: ${XTVER} FIX ME
 Edition: ${EDITION}
 
 MobileURL: $XTFQDN
@@ -696,10 +775,10 @@ echo "Couldn't mail anything - no mailer."
 echo "Set up Mutt."
 true
 else
-MSUB="Mobile Instance loaded by xsInstaller for you on $HOSTNAME"
+MSUB="Mobile Instance loaded by xTransmogrifer for you on $HOSTNAME"
 MES="${REPORT}"
 
-$MAILPRGM -s "WSG CloudOps Mobilized $DBNAME for you on $HOSTNAME" $MTO < $MES
+$MAILPRGM -s "WSG CloudOps Transmogrified $DBNAME for you on $HOSTNAME" $MTO < $MES
 fi
 }
 
@@ -817,7 +896,7 @@ fi
 
 if [[ "$STARTMOBILE" == 1 ]];
  then
-   stopmobile 
+   stopmobile
    startmobile
  else
  echo "Skipping startstopmobile"
