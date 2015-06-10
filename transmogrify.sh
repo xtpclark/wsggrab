@@ -72,30 +72,6 @@ fi
 done
 }
 
-enviro()
-{
-BAKDIR=${WORKING}/xtupledb
-SQLDIR=${WORKING}/sql
-LOGDIR=${WORKING}/log
-SETS=${WORKING}/ini/settings.ini
-CUSTSETS=${CUSTSET}
-CUSTBAK=${WORKING}/custbak
-EC2IPV4=`ec2metadata --public-ipv4`
-}
-
-settings()
-{
-if [ -e $SETS ]
-then
-source $SETS
-SLACK_MESSAGE="Starting xTransmogrifier"
-sendslack
-else
-echo "No Settings"
-exit 0;
-fi
-}
-
 custsettings()
 {
 
@@ -115,6 +91,20 @@ exit 0;
 fi
 }
 
+
+
+enviro()
+{
+BAKDIR=${WORKING}/xtupledb
+SQLDIR=${WORKING}/sql
+LOGDIR=${WORKING}/log
+SETS=${WORKING}/ini/settings.ini
+CUSTSETS=${CUSTSET}
+CUSTBAK=${WORKING}/custbak
+EC2IPV4=`ec2metadata --public-ipv4`
+}
+
+
 sendslack()
 {
 if [[ "$USESLACKMSG" == 1 ]];
@@ -127,6 +117,20 @@ echo ${SLACK_MESSAGE}
 fi
 
 }
+
+settings()
+{
+if [ -e $SETS ]
+then
+source $SETS
+SLACK_MESSAGE="Starting xTransmogrifier"
+sendslack
+else
+echo "No Settings"
+exit 0;
+fi
+}
+
 
 s3check ()
 {
@@ -249,7 +253,7 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
-PGCMD="psql -At -U ${PGUSER} -p ${PGPORT} -h ${PGHOST}"
+PGCMD="psql -At -U ${PGUSER} -p ${PGPORT} -h ${PGHOST} "
 echo ${PGCMD}
 }
 
@@ -320,12 +324,12 @@ echo "================"
 echo "In ${FUNCNAME[0]}"
 
 STARTTIME=`date "+%T"`
-SLACK_MESSAGE="Started ${DBNAME} Restore: ${STARTTIME}"
+SLACK_MESSAGE="Restoring ${DBNAME} Started: ${STARTTIME}"
 sendslack
 RESTOREFILE=${BAKDIR}/${BACKUPFILE}
 RESTOREDB=`pg_restore -U ${PGUSER} -p ${PGPORT} -h ${PGHOST} -d ${DBNAME} ${RESTOREFILE}`
 STOPTIME=`date "+%T"`
-SLACK_MESSAGE="Completed ${DBNAME} Restore: ${STOPTIME}"
+SLACK_MESSAGE="Restore ${DBNAME} Complete: ${STOPTIME}"
 sendslack
 }
 
@@ -393,19 +397,18 @@ echo "In ${FUNCNAME[0]}"
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Starting Ordered SQL Load : ${STARTTIME}"
 sendslack
+#OLDIFS=$IFS
 
-OLDIFS=$IFS
-IFS="
-"
+#IFS="
+#"
 for F in $(cat $CTRLFILE) ; do
 
-res=`$PGCMD ${DBNAME} < ${CUSTSCRIPT}/${F}`
+res=`${PGCMD} ${DBNAME} < ${CUSTSCRIPT}/${F}`
 
-echo $res
 SLACK_MESSAGE="Restored ${F}"
 sendslack
 done
-IFS=$OLDIFS
+#IFS=$OLDIFS
 
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="Completed Ordered Restore of Custom Schemas : ${STOPTIME}"
@@ -452,37 +455,27 @@ echo "In ${FUNCNAME[0]}"
 if [ -e $PRESQL ];
 then
 SLACK_MESSAGE="Running presql file ${PRESQL} on ${DBNAME}"
-echo $SLACK_MESSAGE
 sendslack
 
-OLDIFS=$IFS
-IFS="
-"
+#OLDIFS=$IFS
+#IFS="
+#"
    for F in $(cat $PRESQL) ; do
+PRESQLFILE=${PREPATH}/${F}
 
- res=`$PGCMD ${DBNAME} < ${PREPATH}/${F}`
+${PGCMD} -d ${DBNAME} -f ${PRESQLFILE}
 
-echo "Command Was: $res"
-echo "PRESQL = $PRESQL"
-echo "PREPATH = $PREPATH"
-echo "File is $F"
-echo "$PGCMD ${DBNAME} < ${PREPATH}/${F}"
-
-   SLACK_MESSAGE="Ran ${PRESQL}"
-   echo $SLACK_MESSAGE
+   SLACK_MESSAGE="Ran PRESQL - ${PGCMD} -d ${DBNAME} -f ${PRESQLFILE}"
    sendslack
  done
 
 else
 
 SLACK_MESSAGE="no presql file."
-echo $SLACK_MESSAGE
 sendslack
 fi
 
-CK_MESSAGE="Restored ${F}"
-sendslack
-IFS=$OLDIFS
+#IFS=$OLDIFS
 
 }
 
@@ -493,36 +486,36 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
-# DROPSQL="${WORKING}/custsql/${DROPSQL}"
+#OLDIFS=$IFS
+#IFS="
+#"
+
 if [ -e $DROPSQL ];
 then
-SLACK_MESSAGE="Running dropsql file ${DROPSQL} on ${DBNAME}"
-echo $SLACK_MESSAGE
+SLACK_MESSAGE="Reading dropsql manifest file ${DROPSQL}"
 sendslack
 
-OLDIFS=$IFS
-IFS="
-"
 for F in $(cat $DROPSQL) ; do
+DROPSQLFILE=${PREPATH}/${F}
 
-res=`$PGCMD ${DBNAME} < ${PREPATH}/${F}`
+ ${PGCMD} -d ${DBNAME} -f ${DROPSQLFILE}
 
-echo $res
+# psql -U admin -p 5436 
 
-echo "$PGCMD ${DBNAME} < ${PREPATH}/${F}"
 
-SLACK_MESSAGE="Ran ${DROPSQL}"
-echo $SLACK_MESSAGE
+SLACK_MESSAGE="Ran DROPSQL - ${PGCMD} -d ${DBNAME} -f ${DROPSQLFILE}"
 sendslack
 done
 
 else
 SLACK_MESSAGE="no dropsql file."
-echo $SLACK_MESSAGE
 sendslack
 
 fi
-IFS=$OLDIFS
+
+#IFS=$OLDIFS
+
+
 
 }
 
@@ -536,7 +529,6 @@ echo "================"
 echo "In ${FUNCNAME[0]}"
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Started Headless Updater: ${STARTTIME} $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF"
-echo $SLACK_MESSAGE
 sendslack
 
 echo "$AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF"
@@ -545,7 +537,6 @@ bash $AUTO_UPDATER_PATH -l $AUTO_UPDATER_UG_SCRIPT_DIR $AUTO_UPDATER_TARGET_CONF
 
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="Completed Headless Updater: ${STOPTIME}"
-echo $SLACK_MESSAGE
 sendslack
 
 }
@@ -557,36 +548,29 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 
-# POSTSQL="${WORKING}/custsql/${POSTSQL}"
 if [ -e $POSTSQL ];
 then
 SLACK_MESSAGE="Running postsql file ${POSTSQL} on ${DBNAME}"
-echo $SLACK_MESSAGE
 sendslack
 
-OLDIFS=$IFS
-IFS="
-"
+#OLDIFS=$IFS
+#IFS="
+#"
 for F in $(cat $POSTSQL) ; do
 
-res=`$PGCMD ${DBNAME} < ${PREPATH}/${F}`
+${PGCMD} ${DBNAME} < ${PREPATH}/${F}
 
-echo $res
-echo "$PGCMD ${DBNAME} < ${PREPATH}/${F}"
-
-SLACK_MESSAGE="Ran ${POSTSQL}"
-echo $SLACK_MESSAGE
+SLACK_MESSAGE="Ran POSTSQL $F"
 sendslack
 
 done
 
 else
 SLACK_MESSAGE="no postsql file."
-echo $SLACK_MESSAGE
 sendslack
 
 fi
-IFS=$OLDIFS
+#IFS=$OLDIFS
 
 
 }
@@ -644,12 +628,10 @@ CKMOB=`${PGCMD} ${DBNAME} -c "SELECT getpkgver('xt');"`
 if [ -z $CKMOB ];
 then
 SLACK_MESSAGE="No Mobile, running updater"
-echo "${SLACK_MESSAGE}"
 sendslack
 
 else
 SLACK_MESSAGE="Mobile ${CKMOB} found. Running ${XTPATH}/scripts/build_app.js -c ${XTCFG} with node $NVER"
-echo "${SLACK_MESSAGE}"
 sendslack
 sudo n $NVER
 sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG}
@@ -665,14 +647,12 @@ echo "================"
 echo "In ${FUNCNAME[0]}"
 STARTTIME=`date "+%T"`
 SLACK_MESSAGE="Running Build:${STARTTIME}: ${XTPATH}/scripts/build_app.js -d ${DBNAME} -c ${XTCFG} with n $NVER"
-echo "${SLACK_MESSAGE}\n"
 sendslack
 sudo n $NVER
 sudo ${XTPATH}/scripts/build_app.js -d ${DBNAME} -c ${XTCFG}
 checkxtver
 STOPTIME=`date "+%T"`
 SLACK_MESSAGE="Completed Applying Build:${STOPTIME}:"
-echo "${SLACK_MESSAGE}\n"
 sendslack
 }
 
@@ -683,7 +663,6 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 SLACK_MESSAGE="Applying xDruple: ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple with node $NVER"
-echo "${SLACK_MESSAGE}"
 sendslack
 sudo n $NVER
 sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/xdruple
@@ -698,7 +677,6 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 SLACK_MESSAGE="Applying Quality: ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/quality with node $NVER"
-echo "${SLACK_MESSAGE}"
 sendslack
 sudo n $NVER
 sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTPRIPATH}/source/quality
@@ -712,10 +690,9 @@ echo ""
 echo "================"
 echo "In ${FUNCNAME[0]}"
 SLACK_MESSAGE="Applying regmgmt: ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e registration-management/resources with node $NVER"
-echo "${SLACK_MESSAGE}"
 sendslack
 sudo n $NVER
-sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e /usr/local/wsgasset/.xtuple/dist/4.9.x/registration-management/resources
+sudo ${XTPATH}/scripts/build_app.js -c ${XTCFG} -e ${XTREGPATH}/resources
 checkxtver
 }
 
